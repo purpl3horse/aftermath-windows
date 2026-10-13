@@ -55,7 +55,7 @@ let package = Package(
                 "extensions/Collection.swift", "extensions/Data.swift",
                 "extensions/String.swift", "extensions/URL.swift",
                 "aftermath.xcodeproj", "AftermathLogo.png", "CODEOWNERS",
-                "LICENSE.md", "README.md", "README-WINDOWS.md",
+                "LICENSE.md", "README.md", "README-macOS.md", "README-WINDOWS.md",
             ],
             sources: [
                 // Shared Aftermath code (Mac-only parts are compiled out by the flag below)
