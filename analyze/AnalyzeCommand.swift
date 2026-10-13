@@ -117,6 +117,7 @@ class Command {
         guard let prepared = CollectionArchive.prepare(input: input, module: mainModule) else {
             mainModule.log("Could not find an Aftermath collection in \(input)")
             print("Could not find an Aftermath collection in \(input). Expected a zip (or folder) produced by Aftermath on macOS.")
+            PendingWrites.discard(CaseFiles.analysisLogFile)
             try? fm.removeItem(at: CaseFiles.analysisCaseDir)
             exit(1)
         }
@@ -129,8 +130,10 @@ class Command {
         }
 
         // Zip the analysis folder into the output location (same as the macOS build)
+        PendingWrites.flushAll()
         CaseFiles.MoveTemporaryCaseDir(outputLocation: outputLocation, isAnalysis: true)
         mainModule.log("Aftermath Finished")
+        PendingWrites.flushAll()
 
         // Remove the temporary copies. Unlike macOS, nothing cleans the temp folder later.
         if let extracted = prepared.temporaryExtractionDir {

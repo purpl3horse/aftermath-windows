@@ -43,6 +43,7 @@ class AnalysisModule: AftermathModule, AMProto {
         
         let storyline = Storyline(collectionDir: collectionDir, storylineFile: storylineFile, timelineFile: timelineFile)
         storyline.run()
+        PendingWrites.flushAll()
     
     }
 }

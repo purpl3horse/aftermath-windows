@@ -97,6 +97,29 @@ class Aftermath {
         // (The previous comparator's guard was inverted, so rows were never reordered.)
         func parse(_ row: [String]) -> Date? {
             guard let raw = row.first?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
+            // Fast path: Aftermath writes UTC timestamps as yyyy-MM-ddTHH:mm:ss[Z];
+            // read the fields directly instead of running a date parser on every row.
+            let b = Array(raw.utf8)
+            if b.count >= 19, b[4] == 45, b[7] == 45, b[10] == 84, b[13] == 58, b[16] == 58,
+               b.count == 19 || (b.count == 20 && b[19] == 90) {
+                func num(_ r: Range<Int>) -> Int? {
+                    var v = 0
+                    for i in r { guard b[i] >= 48 && b[i] <= 57 else { return nil }; v = v * 10 + Int(b[i] - 48) }
+                    return v
+                }
+                if let y = num(0..<4), let mo = num(5..<7), let d = num(8..<10),
+                   let h = num(11..<13), let mi = num(14..<16), let s = num(17..<19),
+                   (1...12).contains(mo), (1...31).contains(d), h < 24, mi < 60, s < 61 {
+                    // Days since 1970-01-01 (proleptic Gregorian, UTC)
+                    let yy = mo <= 2 ? y - 1 : y
+                    let era = (yy >= 0 ? yy : yy - 399) / 400
+                    let yoe = yy - era * 400
+                    let doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1
+                    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+                    let days = era * 146097 + doe - 719468
+                    return Date(timeIntervalSince1970: TimeInterval(days * 86400 + h * 3600 + mi * 60 + s))
+                }
+            }
             let iso = raw.hasSuffix("Z") ? raw : "\(raw)Z"
             return try? Date(iso, strategy: .iso8601)
         }

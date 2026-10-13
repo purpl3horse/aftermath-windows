@@ -88,6 +88,7 @@ class Timeline: AftermathModule {
     }
   
     func removeUnsorted() {
+        PendingWrites.flushAll()
         do {
             if filemanager.fileExists(atPath: self.timelineFile.path) {
                 try filemanager.removeItem(at: self.timelineFile)
@@ -133,6 +134,7 @@ class Timeline: AftermathModule {
     }
     
     private func readTimelineCSVRows(path: String) -> [TimelineStruct] {
+        PendingWrites.flushAll()
         
         var timelineStruct = [TimelineStruct]()
         var data = ""

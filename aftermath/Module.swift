@@ -9,6 +9,72 @@ import Foundation
 import Accelerate
 #endif
 
+/// Lines appended with addTextToFile that haven't been written to disk yet.
+/// Only the analyze-only build buffers; elsewhere these calls do nothing.
+/// Anything that reads, moves or deletes a file the analysis writes must call
+/// flushAll() first.
+enum PendingWrites {
+    private static var buffers: [String: (url: URL, data: Data)] = [:]
+    private static var order: [String] = []
+    private static var bufferedBytes = 0
+    private static let flushThreshold = 16 * 1024 * 1024
+
+    private static var lastURL: URL?
+    private static var lastKey = ""
+
+    /// Buffer key for a file. Case files are always built the same way from the case
+    /// directory, so the path string identifies them; the last one is cached because
+    /// consecutive lines almost always go to the same file.
+    private static func key(for url: URL) -> String {
+        if let last = lastURL, last == url { return lastKey }
+        lastURL = url
+        lastKey = url.path
+        return lastKey
+    }
+
+    static func append(_ text: String, to url: URL) {
+        let key = key(for: url)
+        let bytes = Data(text.utf8)
+        if buffers[key] == nil {
+            buffers[key] = (url, bytes)
+            order.append(key)
+        } else {
+            buffers[key]!.data.append(bytes)
+        }
+        bufferedBytes += bytes.count
+        if bufferedBytes >= flushThreshold { flushAll() }
+    }
+
+    static func discard(_ url: URL) {
+        let key = key(for: url)
+        if let pending = buffers.removeValue(forKey: key) {
+            bufferedBytes -= pending.data.count
+            order.removeAll { $0 == key }
+        }
+    }
+
+    static func flushAll() {
+        let fm = FileManager.default
+        for key in order {
+            guard let pending = buffers[key] else { continue }
+            if !fm.fileExists(atPath: pending.url.path) {
+                fm.createFile(atPath: pending.url.path, contents: nil, attributes: nil)
+            }
+            do {
+                let handle = try FileHandle(forWritingTo: pending.url)
+                handle.seekToEndOfFile()
+                handle.write(pending.data)
+                handle.closeFile()
+            } catch {
+                print("Error writing to file \(pending.url.path): \(error)")
+            }
+        }
+        buffers = [:]
+        order = []
+        bufferedBytes = 0
+    }
+}
+
 struct User {
     let username: String
     let homedir: String
@@ -114,6 +180,7 @@ class AftermathModule {
     func createNewCaseFile(dirUrl: URL, filename: String) -> URL {
         let newFile = dirUrl.appendingPathComponent(filename)
         let path = newFile.relativePath
+        PendingWrites.discard(newFile) // creating truncates the file, so drop unwritten lines too
         if !(FileManager.default.createFile(atPath: path, contents: nil, attributes: nil)) {
             print("\(getCurrentTimeStandardized()) - Error creating \(path)")
         }
@@ -122,6 +189,12 @@ class AftermathModule {
     }
     
     func addTextToFile(atUrl: URL, text: String) {
+        #if AFTERMATH_ANALYZE_ONLY
+        // Opening the file once per line is very slow on Windows (antivirus scans each
+        // open), so the analyzer collects lines in memory and writes them in batches.
+        PendingWrites.append("\(text)\n", to: atUrl)
+        return
+        #endif
         if (!FileManager.default.fileExists(atPath: atUrl.relativePath)) {
             let _ = self.createNewCaseFile(dirUrl: atUrl.deletingLastPathComponent(), filename: atUrl.lastPathComponent)
         }

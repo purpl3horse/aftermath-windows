@@ -225,6 +225,7 @@ class Storyline: AftermathModule {
     }
     
     private func readStorylineCSV(path: String) -> [StorylineStruct] {
+        PendingWrites.flushAll()
        
         var storylineStruct = [StorylineStruct]()
         var data = ""
@@ -257,6 +258,7 @@ class Storyline: AftermathModule {
     }
     
     func removeUnsorted() {
+        PendingWrites.flushAll()
         
         do {
             if filemanager.fileExists(atPath: self.storylineFile.path) {
