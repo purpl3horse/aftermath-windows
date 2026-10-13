@@ -6,7 +6,9 @@
 
 
 import Foundation
+#if canImport(ZIPFoundation)
 import ZIPFoundation
+#endif
 
 struct CaseFiles {
     #if AFTERMATH_ANALYZE_ONLY
@@ -112,7 +114,11 @@ struct CaseFiles {
                 #else
                 let tmpZipURL = URL(fileURLWithPath: "/tmp/Aftermath_tmp_zip")
                 #endif
+                #if canImport(ZIPFoundation)
                 try fm.zipItem(at: localCaseDir, to: tmpZipURL, shouldKeepParent: true, compressionMethod: .deflate)
+                #else
+                try SystemArchiver.zip(directory: localCaseDir, to: tmpZipURL)
+                #endif
                 try fm.moveItem(at: tmpZipURL, to: zippedURL)
                 print("Aftermath archive moved to \(zippedURL.path)")
                 

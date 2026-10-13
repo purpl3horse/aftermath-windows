@@ -11,17 +11,29 @@
 
 import PackageDescription
 
+// Zip handling. On macOS this uses ZIPFoundation, like the Xcode build. Elsewhere
+// ZIPFoundation needs a system zlib that Windows doesn't have, so it isn't fetched
+// at all and the OS's bsdtar does the zip work instead
+// (C:\Windows\System32\tar.exe, built into Windows 10 1803 and later).
+#if os(macOS)
+let zipPackages: [Package.Dependency] = [
+    .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.19"),
+]
+let zipProducts: [Target.Dependency] = [
+    .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+]
+#else
+let zipPackages: [Package.Dependency] = []
+let zipProducts: [Target.Dependency] = []
+#endif
+
 let package = Package(
     name: "aftermath",
     platforms: [.macOS(.v12)],
     products: [
         .executable(name: "aftermath", targets: ["aftermath"])
     ],
-    dependencies: [
-        // Windows support in ZIPFoundation is on its main branch but not yet in a
-        // tagged release (0.9.20 and earlier lack it), so this pins a known revision.
-        .package(url: "https://github.com/weichsel/ZIPFoundation.git",
-                 revision: "e7a17d57c583067eaa6659cd6d9521265b7664e9"),
+    dependencies: zipPackages + [
         // SQLite for platforms whose SDK has no SQLite3 module (Windows, Linux).
         // This is the same amalgamation package SwiftPM itself uses on Windows.
         .package(url: "https://github.com/swiftlang/swift-toolchain-sqlite.git",
@@ -30,8 +42,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "aftermath",
-            dependencies: [
-                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+            dependencies: zipProducts + [
                 .product(name: "SwiftToolchainCSQLite", package: "swift-toolchain-sqlite",
                          condition: .when(platforms: [.windows, .linux])),
             ],

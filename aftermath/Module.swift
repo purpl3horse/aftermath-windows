@@ -326,7 +326,11 @@ class AftermathModule {
         let unzipped = zippedURL.deletingPathExtension()
 
         do {
+            #if canImport(ZIPFoundation)
             try filemanager.unzipItem(at: zippedURL, to: unzipped.deletingLastPathComponent())
+            #else
+            try SystemArchiver.extract(archive: zippedURL, to: unzipped.deletingLastPathComponent())
+            #endif
     
         } catch {
             print(error)

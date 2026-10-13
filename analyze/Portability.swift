@@ -2,16 +2,25 @@
 //  Portability.swift
 //  aftermath (analyze-only build)
 //
-//  Opening a macOS collection on another OS. The macOS build unzips with
-//  FileManager.unzipItem, which stops at the first entry that fails and assumes
-//  the folder inside the zip is named like the zip. On Windows, files collected
-//  from a Mac can have names Windows rejects (":" "?" "*" trailing dots, CON, ...),
-//  so this extracts entry by entry, renames what Windows can't store, and finds
-//  the collection folder by its contents.
+//  Opening a macOS collection on another OS.
+//
+//  The upstream macOS build unzips with FileManager.unzipItem, which stops at the
+//  first entry that fails and assumes the folder inside the zip is named like the
+//  zip. Files collected from a Mac can have names Windows rejects (":" "?" "*",
+//  trailing dots, CON, ...), so this keeps going past failed entries and finds the
+//  collection folder by its contents.
+//
+//  On macOS, ZIPFoundation is used and invalid names are renamed entry by entry.
+//  On Windows and Linux, the OS's bsdtar does the zip work (ZIPFoundation needs a
+//  system zlib that Windows doesn't have). Windows' tar.exe replaces characters that
+//  are invalid in Windows file names with "_" and continues past entries it can't
+//  write, which only affects files the analysis doesn't read.
 //
 
 import Foundation
+#if canImport(ZIPFoundation)
 import ZIPFoundation
+#endif
 
 struct PreparedCollection {
     /// Folder to hand to AnalysisModule (the one holding metadata.csv, Artifacts, ...)
@@ -41,16 +50,45 @@ enum CollectionArchive {
             return nil
         }
 
+        module.log("Extracting \(input)...")
+        #if canImport(ZIPFoundation)
+        guard extractWithZIPFoundation(input: input, to: extractRoot, module: module) else {
+            try? fm.removeItem(at: extractRoot)
+            return nil
+        }
+        #else
+        do {
+            try SystemArchiver.extract(archive: URL(fileURLWithPath: input), to: extractRoot)
+        } catch SystemArchiver.Failure.partial(let details) {
+            // Some entries couldn't be written; the analysis usually doesn't need them
+            module.log("Some entries could not be extracted (usually files whose names Windows can't store):\n\(details)", displayOnly: true)
+        } catch {
+            module.log("Unable to extract \(input): \(error)")
+            try? fm.removeItem(at: extractRoot)
+            return nil
+        }
+        #endif
+
+        guard let root = locateCollectionRoot(in: extractRoot) else {
+            try? fm.removeItem(at: extractRoot)
+            return nil
+        }
+        return PreparedCollection(collectionDir: root.path, temporaryExtractionDir: extractRoot)
+    }
+
+    #if canImport(ZIPFoundation)
+    /// Extracts entry by entry, renaming names Windows can't store and skipping
+    /// symlinks, Finder metadata and paths that would escape the extraction folder.
+    private static func extractWithZIPFoundation(input: String, to extractRoot: URL, module: AftermathModule) -> Bool {
+        let fm = FileManager.default
         let archive: Archive
         do {
             archive = try Archive(url: URL(fileURLWithPath: input), accessMode: .read)
         } catch {
             module.log("Unable to open \(input) as a zip archive: \(error)")
-            try? fm.removeItem(at: extractRoot)
-            return nil
+            return false
         }
 
-        module.log("Extracting \(input)...")
         var extracted = 0, renamed = 0, skipped = 0
 
         for entry in archive {
@@ -87,12 +125,9 @@ enum CollectionArchive {
 
         module.log("Extracted \(extracted) entries (\(renamed) renamed for this OS, \(skipped) skipped)")
 
-        guard let root = locateCollectionRoot(in: extractRoot) else {
-            try? fm.removeItem(at: extractRoot)
-            return nil
-        }
-        return PreparedCollection(collectionDir: root.path, temporaryExtractionDir: extractRoot)
+        return true
     }
+    #endif
 
     /// Finds the collection folder: the given folder itself, or a folder up to two
     /// levels below it, that contains Aftermath's top-level files.
@@ -143,5 +178,72 @@ enum CollectionArchive {
         if reserved.contains(stem) { result = "_" + result }
 
         return result
+    }
+}
+
+/// Zip extraction and creation with the operating system's bsdtar
+/// (C:\Windows\System32\tar.exe on Windows 10 1803 and later).
+enum SystemArchiver {
+    enum Failure: Error, CustomStringConvertible {
+        case tarNotFound
+        case failed(String)
+        case partial(String)
+
+        var description: String {
+            switch self {
+            case .tarNotFound:
+                return "tar.exe was not found. It is built into Windows 10 (1803) and later in C:\\Windows\\System32; on Linux install bsdtar (libarchive-tools)."
+            case .failed(let output): return "tar failed: \(output)"
+            case .partial(let output): return output
+            }
+        }
+    }
+
+    /// Unpacks a zip into `destination`. Throws `.partial` when tar extracted the archive
+    /// but reported problems with some entries.
+    static func extract(archive: URL, to destination: URL) throws {
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let before = (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? []
+        let (status, output) = try run(["-x", "-f", archive.nativePath, "-C", destination.nativePath])
+        if status == 0 { return }
+        let after = (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? []
+        throw after.count > before.count ? Failure.partial(output) : Failure.failed(output)
+    }
+
+    /// Zips `directory` (keeping the folder itself as the top level) into `zipURL`.
+    static func zip(directory: URL, to zipURL: URL) throws {
+        let parent = directory.deletingLastPathComponent()
+        let (status, output) = try run(["--format", "zip", "-c", "-f", zipURL.nativePath,
+                                        "-C", parent.nativePath, directory.lastPathComponent])
+        if status != 0 { throw Failure.failed(output) }
+    }
+
+    private static func tarExecutable() -> URL? {
+        let fm = FileManager.default
+        var candidates: [String] = []
+        #if os(Windows)
+        let systemRoot = ProcessInfo.processInfo.environment["SystemRoot"] ?? "C:\\Windows"
+        candidates.append("\(systemRoot)\\System32\\tar.exe")
+        #else
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+        for dir in path.split(separator: ":") {
+            candidates.append("\(dir)/bsdtar")   // GNU tar can't read or write zip files
+        }
+        #endif
+        return candidates.first { fm.isExecutableFile(atPath: $0) }.map { URL(fileURLWithPath: $0) }
+    }
+
+    private static func run(_ arguments: [String]) throws -> (Int32, String) {
+        guard let tar = tarExecutable() else { throw Failure.tarNotFound }
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = tar
+        process.arguments = arguments
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
     }
 }
