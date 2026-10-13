@@ -4,6 +4,8 @@ This fork adds a Swift Package Manager build that runs **only Aftermath's analys
 
 The macOS Xcode project is unchanged and still builds the full collector.
 
+**Just want to run it?** Download `aftermath-windows-x64.zip` from the [Releases](https://github.com/purpl3horse/aftermath-windows/releases) page, extract it, and skip to [step 3](#3-analyze-a-collection). It needs Windows 10 (1803) or later x64 and the Microsoft Visual C++ Redistributable (x64), which most systems already have. Keep the DLLs next to `aftermath.exe`.
+
 ## 1. Install the Swift toolchain
 
 Visual Studio 2022 does not compile Swift itself, but the Swift toolchain uses VS 2022's C++ build tools and Windows SDK. Open the **Visual Studio Installer → Modify** and make sure these are installed:
@@ -30,15 +32,27 @@ swift build -c release
 
 The first build fetches the SQLite package from GitHub and compiles it, so it takes a few minutes.
 
-To find the program, run:
+The program is written to:
 
 ```
-swift build -c release --show-bin-path
+.build\out\Products\Release-windows-x86_64\aftermath.exe
 ```
 
-`aftermath.exe` is in the folder it prints. A warning that `.build\release` couldn't be created as a symbolic link is harmless; it only appears when Windows Developer Mode is off.
+(`swift build -c release --show-bin-path` prints the folder.) A warning that `.build\release` couldn't be created as a symbolic link is harmless; it only appears when Windows Developer Mode is off.
 
-You can copy `aftermath.exe` anywhere. If Windows complains about missing Swift DLLs when it's run on a machine without the Swift toolchain, copy the Swift runtime DLLs next to it (they are in the Swift install folder, under `Runtimes\<version>\usr\bin`).
+### Packaging for other machines
+
+`aftermath.exe` loads the Swift runtime DLLs (`swiftCore.dll`, `Foundation.dll`, `FoundationEssentials.dll` and the DLLs those load); `--static-swift-stdlib` does not remove them on Windows. To run it on a PC without Swift, ship those DLLs next to it:
+
+```
+mkdir C:\tmp\aftermath-windows-x64
+copy .build\out\Products\Release-windows-x86_64\aftermath.exe C:\tmp\aftermath-windows-x64\
+copy "%LOCALAPPDATA%\Programs\Swift\Runtimes\6.4.0\usr\bin\*.dll" C:\tmp\aftermath-windows-x64\
+copy LICENSE.md C:\tmp\aftermath-windows-x64\
+powershell -Command "Compress-Archive -Path C:\tmp\aftermath-windows-x64\* -DestinationPath C:\tmp\aftermath-windows-x64.zip -Force"
+```
+
+Adjust `6.4.0` to the folder under `%LOCALAPPDATA%\Programs\Swift\Runtimes`. Test the zip on a machine without Swift (`aftermath.exe --version`) before publishing it. The other dependencies (`KERNEL32.dll`, `VCRUNTIME140.dll`, `api-ms-win-crt-*.dll`) are part of Windows and the Visual C++ Redistributable.
 
 ## 3. Analyze a collection
 
