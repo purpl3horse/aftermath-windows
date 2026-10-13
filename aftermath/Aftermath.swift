@@ -91,19 +91,24 @@ class Aftermath {
     
     @available(macOS 12.0, *)
     static func sortCSV(unsortedArr: [[String]]) throws -> [[String]] {
-        var arr = unsortedArr
-        // These strings may appear in the input array but they don't play nicely with the date 
-        // formatting so they will be ignored
-        let rejectedStrings = ["birth", "accessed"]
-        try arr.sort { lhs, rhs in
-            guard let lhsStr = lhs.first, let rhsStr = rhs.first,
-                  rejectedStrings.contains(lhsStr), rejectedStrings.contains(rhsStr) else {
-                return false
-            }
-            let lhsDate = try Date("\(lhsStr)Z", strategy: .iso8601)
-            let rhsDate = try Date("\(rhsStr)Z", strategy: .iso8601)
-            return lhsDate > rhsDate
+        // Sorts rows newest first by the timestamp in their first column.
+        // Timestamps appear both with and without a trailing "Z"; rows whose first column
+        // isn't a timestamp (headers, "unknown") keep their order and go to the end.
+        // (The previous comparator's guard was inverted, so rows were never reordered.)
+        func parse(_ row: [String]) -> Date? {
+            guard let raw = row.first?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
+            let iso = raw.hasSuffix("Z") ? raw : "\(raw)Z"
+            return try? Date(iso, strategy: .iso8601)
         }
-        return arr
+        let keyed = unsortedArr.enumerated().map { (index: $0.offset, date: parse($0.element), row: $0.element) }
+        let sorted = keyed.sorted { lhs, rhs in
+            switch (lhs.date, rhs.date) {
+            case let (l?, r?): return l != r ? l > r : lhs.index < rhs.index
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return lhs.index < rhs.index
+            }
+        }
+        return sorted.map { $0.row }
     }
 }
