@@ -9,12 +9,18 @@ import Foundation
 import ZIPFoundation
 
 struct CaseFiles {
+    #if AFTERMATH_ANALYZE_ONLY
+    // Collection case dir; unused when only analyzing, so avoid IOKit/Host lookups
+    static let caseDir = FileManager.default.temporaryDirectory.appendingPathComponent("Aftermath_\(ProcessInfo.processInfo.hostName.replacingOccurrences(of: " ", with: "_"))")
+    #else
     static let caseDir = FileManager.default.temporaryDirectory.appendingPathComponent("Aftermath_\(serialNumber ?? Host.current().localizedName?.replacingOccurrences(of: " ", with: "_") ?? "")")
+    #endif
     static let logFile = caseDir.appendingPathComponent("aftermath.log")
     static var analysisCaseDir = FileManager.default.temporaryDirectory
     static let analysisLogFile = analysisCaseDir.appendingPathComponent("aftermath_analysis.log")
     static let metadataFile = caseDir.appendingPathComponent("metadata.csv")
     static let fm = Aftermath.fm
+    #if !AFTERMATH_ANALYZE_ONLY
     static var serialNumber: String? {
         var platformExpert: io_service_t = 0
         if #available(macOS 12.0, *) {
@@ -34,6 +40,7 @@ struct CaseFiles {
         
         return serialNumber
     }
+    #endif
     
     static func CreateCaseDir() {
         do {
@@ -99,7 +106,12 @@ struct CaseFiles {
             }
             
             do {
+                #if AFTERMATH_ANALYZE_ONLY
+                // /tmp doesn't exist on Windows; use the platform's temp directory
+                let tmpZipURL = FileManager.default.temporaryDirectory.appendingPathComponent("Aftermath_tmp_zip")
+                #else
                 let tmpZipURL = URL(fileURLWithPath: "/tmp/Aftermath_tmp_zip")
+                #endif
                 try fm.zipItem(at: localCaseDir, to: tmpZipURL, shouldKeepParent: true, compressionMethod: .deflate)
                 try fm.moveItem(at: tmpZipURL, to: zippedURL)
                 print("Aftermath archive moved to \(zippedURL.path)")

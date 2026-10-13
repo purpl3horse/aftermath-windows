@@ -6,7 +6,11 @@
 //
 
 import Foundation
+#if canImport(SQLite3)
 import SQLite3
+#else
+import SwiftToolchainCSQLite
+#endif
 
 
 class DatabaseParser: AftermathModule {
@@ -38,7 +42,7 @@ class DatabaseParser: AftermathModule {
             
             var db : OpaquePointer?
             
-            if sqlite3_open(tcc_path.path, &db) == SQLITE_OK {
+            if sqlite3_open(tcc_path.nativePath, &db) == SQLITE_OK {
                 var queryStatement: OpaquePointer? = nil
                 let queryString = "select client, auth_value, auth_reason, service, last_modified from access order by last_modified desc"
                 
@@ -116,7 +120,7 @@ class DatabaseParser: AftermathModule {
         
             var db : OpaquePointer?
             
-            if sqlite3_open(fileURL.path, &db) == SQLITE_OK {
+            if sqlite3_open(fileURL.nativePath, &db) == SQLITE_OK {
                 var queryStatement: OpaquePointer? = nil
                 let queryString = "select LSQuarantineTimeStamp, LSQuarantineAgentName, LSQuarantineAgentBundleIdentifier, LSQuarantineDataURLString, LSQuarantineOriginURLString, LSQuarantineSenderName, LSQuarantineSenderAddress from LSQuarantineEvent order by LSQuarantineTimeStamp desc"
                 
@@ -201,7 +205,7 @@ class DatabaseParser: AftermathModule {
         
         var db : OpaquePointer?
         
-        if sqlite3_open(fileURL.path, &db) == SQLITE_OK {
+        if sqlite3_open(fileURL.nativePath, &db) == SQLITE_OK {
             var queryStatement: OpaquePointer? = nil
             let queryString = "SELECT violated_rule, exec_path, exec_signing_id, exec_team_id, exec_sha256, exec_is_notarized, reported, dt FROM events ORDER BY dt DESC;"
             
@@ -286,7 +290,7 @@ class DatabaseParser: AftermathModule {
         
         // parse provenance tracking
         var db : OpaquePointer?
-        if sqlite3_open(fileURL.path, &db) == SQLITE_OK {
+        if sqlite3_open(fileURL.nativePath, &db) == SQLITE_OK {
             var queryStatement: OpaquePointer? = nil
             let queryString = "SELECT pk, url, bundle_id, cdhash, team_identifier, signing_identifier, flags, timestamp, link_pk FROM provenance_tracking;"
             if sqlite3_prepare(db, queryString, -1, &queryStatement, nil) == SQLITE_OK {
@@ -424,5 +428,13 @@ class DatabaseParser: AftermathModule {
 extension Collection where Indices.Iterator.Element == Index {
     subscript (safe index: Index) -> Iterator.Element? {
         return indices.contains(index) ? self[index] : nil
+    }
+}
+
+extension URL {
+    /// The path in the platform's native form, for passing to C APIs such as sqlite3_open.
+    /// On macOS this equals `.path`; on Windows it yields `C:\...` rather than `/C:/...`.
+    var nativePath: String {
+        return self.withUnsafeFileSystemRepresentation { $0.map { String(cString: $0) } } ?? self.path
     }
 }

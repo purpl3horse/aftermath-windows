@@ -1,0 +1,23 @@
+{
+  "originHash" : "ccfc412007c77b87ac2d14a99941cc0ab46ddc5bb689090a9c4dad1933f6b6c5",
+  "pins" : [
+    {
+      "identity" : "swift-toolchain-sqlite",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-toolchain-sqlite.git",
+      "state" : {
+        "revision" : "d9b11cb79071d5ab992ff47dfd2e8d6e19418d97",
+        "version" : "1.0.13"
+      }
+    },
+    {
+      "identity" : "zipfoundation",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/weichsel/ZIPFoundation.git",
+      "state" : {
+        "revision" : "e7a17d57c583067eaa6659cd6d9521265b7664e9"
+      }
+    }
+  ],
+  "version" : 3
+}

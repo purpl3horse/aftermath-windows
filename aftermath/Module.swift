@@ -5,7 +5,9 @@
 //  Copyright  2022 JAMF Software, LLC
 
 import Foundation
+#if !AFTERMATH_ANALYZE_ONLY
 import Accelerate
+#endif
 
 struct User {
     let username: String
@@ -43,6 +45,11 @@ class AftermathModule {
     }
     
     func getUsersOnSystem() -> [User] {
+        #if AFTERMATH_ANALYZE_ONLY
+        // Analysis only reads a collection archive; it never needs the local user list.
+        // (The macOS lookup below reads /var/db/dslocal, which doesn't exist elsewhere.)
+        return []
+        #else
         var users = [User]()
         
         // Check Permissions
@@ -66,6 +73,7 @@ class AftermathModule {
                 }
             }
         return users
+        #endif
     }
     
     func getBasicUsersOnSystem() -> [User] {
@@ -176,7 +184,7 @@ class AftermathModule {
     }
     
     func getFileMetadata(fromFile: URL) {
-                
+        #if !AFTERMATH_ANALYZE_ONLY
         // ignore /private/var/audit/ directory
         if fromFile.pathComponents.contains("audit") {
             return
@@ -279,6 +287,7 @@ class AftermathModule {
         }
             
         self.addTextToFile(atUrl: CaseFiles.metadataFile, text: metadata)
+        #endif
     }
     
     func log(_ note: String, displayOnly: Bool = false, file: String = #file) {
